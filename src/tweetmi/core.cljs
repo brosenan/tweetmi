@@ -1,5 +1,5 @@
 (ns tweetmi.core
-  (:require [reagent.core :as reagent :refer [atom]]
+  (:require [reagent.core :as reagent]
             [axiom-cljs.core :as ax]
             [clojure.string :as str])
   (:require-macros [axiom-cljs.macros :refer [defview defquery user]]))
@@ -11,14 +11,14 @@
 ;; A utility function that returns a callback suitable for :on-change.
 ;; The callback will call the given swap! function to modify the given field value.
 (defn update-field [swap! field]
-  #(swap! assoc field (-> % .-target .-value)))
+  )
 
 ;; This is a view.  It tracks facts (in this case, tweets made by the logged-in user),
 ;; and exposes them as a function of the same name.
 (defview tweet-view [me]
-  [:tweetmi/tweeted me text ts restricted]
+  [:tweetmi/tweeted me text ts attrs]
   ;; Allow UI updates on data updates (reagent)
-  :store-in (atom nil)
+  :store-in (reagent/atom nil)
   ;; Order by timestamp, descending.
   :order-by (- ts)
   ;; The logged-in user alone can modify or delete tweets created by this view
@@ -26,7 +26,7 @@
   :writers #{$user}
   ;; Restricted tweets can only be read by users I follow.
   ;; Unrestricted tweets can be read by anyone
-  :readers (if restricted
+  :readers (if (:restricted attrs)
              #{[:tweetmi.core/follower me]}
              #{}))
 
@@ -43,15 +43,15 @@
      [:button {:on-click #(add {:text ""
                                 ;; The host has a :time method which tells the time...
                                 :ts ((:time host))
-                                :restricted false})} "tweet!"]
+                                :attrs {}})} "tweet!"]
      [:button {:on-click #(add {:text ""
                                 ;; The host has a :time method which tells the time...
                                 :ts ((:time host))
-                                :restricted true})} "tweet restricted!"]
+                                :attrs {:restricted true}})} "tweet restricted!"]
      [:ul
       ;; We now iterate over the results.
       ;; swap! and del! are functions that alow us to modify or delete this specific tweet.
-      (for [{:keys [me text ts restricted swap! del!]} tweets]
+      (for [{:keys [me text ts attrs swap! del!]} tweets]
         ;; React (and hence, reagent) require that items in a list shall have unique keys.
         ;; We use the tweets' timestamps to identify them.
         [:li {:key ts}
@@ -60,26 +60,26 @@
          ;; and its :on-change callback uses the swap! function associated with this tweet
          ;; to modify the tweet's text every time the input field's text changes.
          [:input {:value text
-                  :on-change (update-field swap! :text)
-                  :style {:color (if restricted "red" "black")}}]
+                  :on-change #(swap! assoc :text (.-target.value %))
+                  :style {:color (if (:restricted attrs) "red" "black")}}]
          ;; The del! function deletes this tweet, so it can be used as the :on-click handler
          ;; of the delete button.
          [:button {:on-click del!} "X"]])]]))
 
 ;; This atom stores the name of a new followee (a user we would like to follow) while it is being edited.
-(defonce new-followee (atom ""))
+(defonce new-followee (reagent/atom ""))
 
 ;; This view tracks all this user's followees (users he or she follows).
 (defview following-view [me]
   [:tweetmi/follows me followee]
-  :store-in (atom nil)
+  :store-in (reagent/atom nil)
   ;; Alphabetical order
   :order-by followee)
 
 ;; This query tracs followers of the current user
 (defquery followers-query [me]
   [:tweetmi/follower me -> follower]
-  :store-in (atom nil)
+  :store-in (reagent/atom nil)
   ;; Alphabetical order
   :order-by follower)
 
@@ -87,7 +87,7 @@
 ;; Adding an empty element to this view will make u1 follow u2.
 (defview follow-view [u1 u2]
   [:tweetmi/follows u1 u2]
-  :store-in (atom nil))
+  :store-in (reagent/atom nil))
 
 ;; This function creates a follow/unfollow button, that controls whether u1 follows u2.
 (defn follow-button [host u1 u2]
@@ -150,12 +150,12 @@
     (quot ((:time host)) ms-in-day)))
 
 ;; Which day ranges are we looking at?
-(defonce day-ranges (atom [[-2 5]])) ;; One week by default, going 1 day into the future
+(defonce day-ranges (reagent/atom [[-2 5]])) ;; One week by default, going 1 day into the future
 
 ;; This query will give us the tweets in the currrent user's timeline for the given day-range. 
 (defquery timline-query [me day-from day-to]
   [:tweetmi/timeline me day-from day-to -> author tweet ts]
-  :store-in (atom nil)
+  :store-in (reagent/atom nil)
   :order-by (- ts))
 
 ;; The timeline pane
@@ -183,7 +183,7 @@
 
 (defview dbg [user day]
   [:tweetmi.core/followee-tweets [user day] author tweet ts]
-  :store-in (atom nil))
+  :store-in (reagent/atom nil))
 
 (defn dbg-pane [host]
   [:ul
@@ -204,7 +204,7 @@
 
 ;; The host object holds communication to the host.
 ;; We provide it with a reagent atom so that we can track its state from the UI.
-(defonce host (ax/default-connection atom))
+(defonce host (ax/default-connection reagent/atom))
 
 ;; Renderring the page...
 (when-let [app-elem (js/document.getElementById "app")]
